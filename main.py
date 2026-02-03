@@ -36,7 +36,7 @@ parser.add_argument(
     "--workers", default=0, type=int, help="number of data loading workers"
 )
 parser.add_argument(
-    "--epochs", default=50, type=int, help="number of total epochs to run"
+    "--epochs", default=500, type=int, help="number of total epochs to run"
 )
 parser.add_argument(
     "--start_epoch",
@@ -156,15 +156,15 @@ def main(args):
         test_ids=test_ids_bin,
         val_ids=val_ids_bin
     )
-    # Normalizer
-    # normalizer = {}
+    #Normalizer
+    normalizer = {}
     targs = []
     for batch in train_set:
         targs.append(batch["target"])
 
     targs = torch.concat(targs)
     normalizer_target = Normalizer(targs, "target")
-    # normalizer["target"] = normalizer_target
+    normalizer["target"] = normalizer_target
     modelparams.update({"means": {"target": normalizer_target.mean}})
     modelparams.update({"stddevs": {"target": normalizer_target.std}})
 
@@ -175,7 +175,7 @@ def main(args):
         fidelity = torch.concat(fidelity)
 
         normalizer_fidelity = Normalizer(fidelity, "fidelity")
-        # normalizer["fidelity"] = normalizer_fidelity
+        normalizer["fidelity"] = normalizer_fidelity
         modelparams.update(
             {
                 "means": {
@@ -187,7 +187,7 @@ def main(args):
         modelparams.update(
             {
                 "stddevs": {
-                    "target": normalizer_target.mean,
+                    "target": normalizer_target.std,
                     "fidelity": normalizer_fidelity.std,
                 }
             }
@@ -253,14 +253,14 @@ def main(args):
         loss_coeff=loss_coeff,
         correspondence_keys=correspondence_keys,
         operation_name=details["loss_fn"],
-        normalizer=None,
+        normalizer=normalizer,
     )
     # Set metric function
     metric_fn = get_loss_metric_fn(
         loss_coeff=loss_coeff,
         correspondence_keys=correspondence_keys,
         operation_name=details["metric_fn"],
-        normalizer=None,
+        normalizer=normalizer,
     )
 
     # Set scheduler

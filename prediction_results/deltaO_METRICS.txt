@@ -1,0 +1,9 @@
+BINDING ENERGY OF DELTAO
+============================================================
+
+MAE (Mean Absolute Error):  0.203903 eV
+RMSE (Root Mean Squared Error): 0.304433 eV
+R² (Coefficient of Determination): 0.971148
+
+Number of valid predictions: 270
+Number of invalid predictions: 1192

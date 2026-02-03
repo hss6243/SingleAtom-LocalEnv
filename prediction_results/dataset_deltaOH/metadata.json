@@ -1,0 +1,10 @@
+{
+  "num_samples": 556,
+  "property": "deltaOH",
+  "output_keys": [
+    "deltaO",
+    "deltaOH"
+  ],
+  "source_dataset": "Original DFT data (filtered by valid targets)",
+  "timestamp": "2026-01-27T17:23:49.481770"
+}

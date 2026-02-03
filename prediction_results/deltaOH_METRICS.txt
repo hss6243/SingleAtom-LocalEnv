@@ -1,0 +1,9 @@
+BINDING ENERGY OF DELTAOH
+============================================================
+
+MAE (Mean Absolute Error):  0.237255 eV
+RMSE (Root Mean Squared Error): 0.401483 eV
+R² (Coefficient of Determination): 0.891717
+
+Number of valid predictions: 258
+Number of invalid predictions: 1204

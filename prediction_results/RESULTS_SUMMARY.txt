@@ -1,0 +1,96 @@
+================================================================================
+ENSEMBLE MODEL PREDICTION RESULTS SUMMARY
+================================================================================
+
+Generated: 2026-01-27 16:27:10
+
+1. MODEL CONFIGURATION:
+--------------------------------------------------------------------------------
+Number of ensemble models: 10
+Model type: PainnMultifidelity
+Model directory: /home3/mercury/tools/SingleAtom-LocalEnv/models/m_painn/2_components/
+Output properties: deltaO, deltaOH
+
+2. DATASET INFORMATION:
+--------------------------------------------------------------------------------
+Total samples processed: 1462
+  - sac_2_components: 1462 samples
+
+Samples with valid metal atom targets: 315
+  - With valid deltaO: 270
+  - With valid deltaOH: 258
+
+3. PREDICTION RESULTS:
+--------------------------------------------------------------------------------
+Successfully predicted: 683 samples (with valid metal atoms)
+Skipped: 2755 samples (no valid metal atom targets)
+
+4. DETAILED METRICS BY PROPERTY:
+--------------------------------------------------------------------------------
+
+Property: DELTAO
+  Data Statistics:
+    Total predictions: 1462
+    Valid predictions (non-NaN): 270
+    Invalid/NaN predictions: 1192
+
+  Performance Metrics:
+    MAE (Mean Absolute Error): 0.203903 eV
+    RMSE (Root Mean Squared Error): 0.304433 eV
+    R² (Coefficient of Determination): 0.971148
+
+  Target Value Statistics:
+    Min: -3.087241 eV
+    Max: 4.866183 eV
+    Mean: 1.388671 eV
+    Std Dev: 1.768517 eV
+
+  Prediction Value Statistics:
+    Min: -3.004434 eV
+    Max: 4.250220 eV
+    Mean: 1.419662 eV
+    Std Dev: 1.704325 eV
+
+  Prediction Error Statistics:
+    Min Error: 0.001062 eV
+    Max Error: 2.434440 eV
+    Mean Error: 0.203903 eV
+    Std Dev Error: 0.226060 eV
+    Median Error: 0.144367 eV
+
+Property: DELTAOH
+  Data Statistics:
+    Total predictions: 1462
+    Valid predictions (non-NaN): 258
+    Invalid/NaN predictions: 1204
+
+  Performance Metrics:
+    MAE (Mean Absolute Error): 0.237255 eV
+    RMSE (Root Mean Squared Error): 0.401483 eV
+    R² (Coefficient of Determination): 0.891717
+
+  Target Value Statistics:
+    Min: -2.685748 eV
+    Max: 1.962456 eV
+    Mean: -0.099275 eV
+    Std Dev: 1.201397 eV
+
+  Prediction Value Statistics:
+    Min: -2.265658 eV
+    Max: 1.902346 eV
+    Mean: -0.040589 eV
+    Std Dev: 1.096366 eV
+
+  Prediction Error Statistics:
+    Min Error: 0.001117 eV
+    Max Error: 3.667788 eV
+    Mean Error: 0.237255 eV
+    Std Dev Error: 0.323880 eV
+    Median Error: 0.156300 eV
+
+5. DATA CONSISTENCY VERIFICATION:
+--------------------------------------------------------------------------------
+✗ deltaO: 587 plotted vs 270 expected
+✗ deltaOH: 556 plotted vs 258 expected
+
+================================================================================

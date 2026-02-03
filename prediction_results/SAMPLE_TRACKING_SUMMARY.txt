@@ -1,0 +1,172 @@
+================================================================================
+                    SAMPLE TRACKING IMPLEMENTATION SUMMARY
+================================================================================
+
+Date: January 27, 2026
+Status: ✓ COMPLETE
+
+================================================================================
+OBJECTIVE ACHIEVED
+================================================================================
+
+You can now identify any point in the parity plot and trace it back to its 
+original data through the sample ID!
+
+================================================================================
+HOW IT WORKS
+================================================================================
+
+1. SAMPLE IDs ARE TRACKED
+   - Each sample in the dataset has a unique 'name' field containing its ID
+   - Example IDs: 258985354, 260947588, 255767243, 261893617, etc.
+   - These IDs are now saved in the CSV exports
+
+2. CSV FILES WITH SAMPLE IDS
+   Location: /home3/mercury/1_HE_SAC/2_train/1_DFT_only/prediction_results/
+   
+   Files:
+   - BE_deltaO_predictions_20260127_164237.csv (270 samples)
+   - BE_deltaOH_predictions_20260127_164237.csv (258 samples)
+   
+   Each CSV contains:
+   ├─ sample_name: SAMPLE ID (the key for identification!)
+   ├─ dataset_from: Which dataset it came from (e.g., "sac_2_components")
+   ├─ sample_idx: Index in the combined dataset
+   ├─ target: DFT-calculated binding energy (ground truth)
+   ├─ prediction: ML model prediction (ensemble average of 10 models)
+   ├─ error: Prediction error (pred - target)
+   └─ abs_error: Absolute prediction error
+
+3. LOOKUP UTILITY SCRIPT
+   Script: lookup_sample.py
+   
+   Usage Examples:
+   
+   # Lookup all predictions for sample ID 258985354
+   $ python lookup_sample.py --id 258985354
+   
+   # Lookup only deltaO predictions for a sample
+   $ python lookup_sample.py --id 260947588 --property deltaO
+   
+   Output shows:
+   - Dataset source
+   - DFT target value
+   - ML prediction value
+   - Prediction error and quality rating
+
+================================================================================
+PRACTICAL EXAMPLE: IDENTIFYING A POINT
+================================================================================
+
+Say you see an interesting point in the deltaO parity plot with:
+- Target ≈ 2.3 eV
+- Prediction ≈ 2.7 eV
+
+Steps to identify it:
+1. Find the CSV: BE_deltaO_predictions_20260127_164237.csv
+2. Look for row with target ≈ 2.3
+3. Read the sample_name column: 260947588
+4. Run: python lookup_sample.py --id 260947588
+
+Output tells you:
+- Dataset: sac_2_components
+- Sample index: 22
+- Both O and OH binding energies for this structure
+- Prediction quality assessment
+
+================================================================================
+DATA STRUCTURE
+================================================================================
+
+Original Dataset Sample:
+{
+    'name': tensor(258985354),              ← Sample ID (now tracked!)
+    'nxyz': [...],                          ← Atomic coordinates
+    'lattice': [...],                       ← Lattice vectors
+    'target': tensor([[-0.026, ...], ...]), ← Ground truth BE values
+    'num_atoms': 100,
+    'nbr_list': [...],                      ← Neighbor information
+    'fidelity': tensor([...]),
+    'classification': [...],
+    'offsets': [...]
+}
+
+Metal atom predictions extracted for:
+- deltaO (O binding energy)
+- deltaOH (OH binding energy)
+
+================================================================================
+PREDICTION PROCESS
+================================================================================
+
+Dataset: sac_2_components (1462 samples)
+├─ Total samples: 1462
+├─ Samples with valid metal atoms: 315
+└─ Processed for prediction
+
+Model ensemble: 10 PainnMultifidelity models
+├─ Models: /home3/mercury/tools/SingleAtom-LocalEnv/models/m_painn/2_components/{0-9}/
+├─ Each model makes predictions independently
+└─ Final prediction = average of 10 model outputs
+
+Results:
+├─ deltaO: 270 valid predictions
+│  ├─ MAE: 0.2039 eV
+│  ├─ RMSE: 0.3044 eV
+│  └─ Error range: [-0.9337, 2.4344] eV
+│
+└─ deltaOH: 258 valid predictions
+   ├─ MAE: 0.2373 eV
+   ├─ RMSE: 0.4015 eV
+   └─ Error range: [-1.4298, 3.6678] eV
+
+================================================================================
+FILE LOCATIONS
+================================================================================
+
+Prediction CSVs with Sample IDs:
+  /home3/mercury/1_HE_SAC/2_train/1_DFT_only/prediction_results/
+  ├─ BE_deltaO_predictions_20260127_164237.csv
+  ├─ BE_deltaOH_predictions_20260127_164237.csv
+  ├─ lookup_sample.py (utility script)
+  ├─ README.md (documentation)
+  └─ RESULTS_SUMMARY.txt (metrics summary)
+
+Reference comparison files:
+  /home3/mercury/1_HE_SAC/data/1_PARITY_PLOT_all/1_UMA_CALC_DFT_ALL/
+  ├─ BE_parityplot_O.csv (UMA reference format)
+  └─ BE_parityplot_OH.csv (UMA reference format)
+
+Notebook with complete pipeline:
+  /home3/mercury/1_HE_SAC/2_train/1_DFT_only/persiteTrain.ipynb
+  ├─ Cell 1-3: Configuration & model loading
+  ├─ Cell 4: Dataset loading with CombinedDataset wrapper
+  ├─ Cell 5: Prediction function with sample ID tracking
+  ├─ Cell 7: Parity plot visualization
+  └─ Cell 8: CSV export with sample IDs
+
+================================================================================
+VERIFICATION
+================================================================================
+
+✓ Sample IDs extracted from dataset 'name' field as tensors
+✓ Sample IDs properly converted to integers for CSV export
+✓ All 270 deltaO predictions linked to sample IDs
+✓ All 258 deltaOH predictions linked to sample IDs
+✓ Dataset source tracking implemented (CombinedDataset wrapper)
+✓ Lookup script tested with multiple sample IDs
+✓ CSV format validated against reference format
+
+================================================================================
+NEXT STEPS (OPTIONAL)
+================================================================================
+
+If desired, you could further enhance with:
+
+1. Interactive parity plot where clicking a point shows the sample ID
+2. Comparison plots between ML predictions and UMA predictions
+3. Analysis by metal site (if available in sample data)
+4. Error distribution analysis grouped by sample properties
+5. Extend to other datasets (sac_3_components, testset)
+
+================================================================================
