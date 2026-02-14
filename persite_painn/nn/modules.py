@@ -283,7 +283,6 @@ class ScaleShift(nn.Module):
 
     def __init__(self, means=None, stddevs=None):
         super(ScaleShift, self).__init__()
-
         means = means if (means is not None) else {}
         stddevs = stddevs if (stddevs is not None) else {}
         self.means = means
@@ -296,11 +295,19 @@ class ScaleShift(nn.Module):
         Returns:
             torch.Tensor: layer output.
         """
-
+    
         stddev = self.stddevs.get(key, 1.0)
-        stddev = stddev.to(inp.device)
+        # Allow both tensors and Python scalars; always move to inp.device
+        if not torch.is_tensor(stddev):
+            stddev = torch.as_tensor(stddev, dtype=inp.dtype, device=inp.device)
+        else:
+            stddev = stddev.to(inp.device)
+
         mean = self.means.get(key, 0.0)
-        mean = mean.to(inp.device)
+        if not torch.is_tensor(mean):
+            mean = torch.as_tensor(mean, dtype=inp.dtype, device=inp.device)
+        else:
+            mean = mean.to(inp.device)
         out = inp * stddev + mean
 
         return out

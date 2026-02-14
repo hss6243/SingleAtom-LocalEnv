@@ -938,15 +938,11 @@ class Dataset_lite(TorchDataset):
 
 
 def to_tensor(x, stack=False):
-    """
-    Converts input `x` to torch.Tensor.
-    Args:
-        x (list of lists): input to be converted. Can be: number, string, list, array, tensor
-        stack (bool): if True, concatenates torch.Tensors in the batching dimension
-    Returns:
-        torch.Tensor or list, depending on the type of x
-    Raises:
-        TypeError: Description
+    """Convert various Python/numpy types to torch.Tensor or list.
+
+    This version is made robust to empty lists so that constructing
+    an empty Dataset (e.g., an empty test split) does not raise
+    IndexError.
     """
 
     # a single number should be a list
@@ -957,6 +953,10 @@ def to_tensor(x, stack=False):
         return [x]
 
     if isinstance(x, torch.Tensor):
+        return x
+
+    # handle empty lists safely
+    if isinstance(x, list) and len(x) == 0:
         return x
 
     if type(x) is list and type(x[0]) != str:

@@ -156,17 +156,35 @@ def main(args):
         test_ids=test_ids_bin,
         val_ids=val_ids_bin
     )
-    #Normalizer
-    normalizer = {}
-    targs = []
-    for batch in train_set:
-        targs.append(batch["target"])
 
-    targs = torch.concat(targs)
-    normalizer_target = Normalizer(targs, "target")
+    # Normalizer
+    normalizer = {}
+
+    # --- Normalizers ---
+    # DFT target normalizer (same as DFT-only baseline)
+    targs_target = []
+    for batch in train_set:
+        targs_target.append(batch["target"])
+
+    targs_target = torch.concat(targs_target)
+    normalizer_target = Normalizer(targs_target, "target")
     normalizer["target"] = normalizer_target
-    modelparams.update({"means": {"target": normalizer_target.mean}})
-    modelparams.update({"stddevs": {"target": normalizer_target.std}})
+
+    # UMA normalizer (for optional analysis; loss will use raw d_uma by default)
+    targs_duma = []
+    for batch in train_set:
+        targs_duma.append(batch["d_uma"])
+
+    targs_duma = torch.concat(targs_duma)
+    normalizer_duma = Normalizer(targs_duma, "d_uma")
+    normalizer["d_uma"] = normalizer_duma
+
+    # Ensure means/stddevs are tensors (ScaleShift expects tensors and calls .to())
+    target_mean = torch.as_tensor(normalizer_target.mean, dtype=torch.float32)
+    target_std = torch.as_tensor(normalizer_target.std, dtype=torch.float32)
+
+    modelparams["means"] = {"target": target_mean}
+    modelparams["stddevs"] = {"target": target_std}
 
     if details["multifidelity"]:
         fidelity = []
@@ -176,24 +194,22 @@ def main(args):
 
         normalizer_fidelity = Normalizer(fidelity, "fidelity")
         normalizer["fidelity"] = normalizer_fidelity
-        modelparams.update(
-            {
-                "means": {
-                    "target": normalizer_target.mean,
-                    "fidelity": normalizer_fidelity.mean,
-                }
-            }
-        )
-        modelparams.update(
-            {
-                "stddevs": {
-                    "target": normalizer_target.std,
-                    "fidelity": normalizer_fidelity.std,
-                }
-            }
-        )
 
-    # Get model
+        target_mean = torch.as_tensor(normalizer_target.mean, dtype=torch.float32)
+        target_std = torch.as_tensor(normalizer_target.std, dtype=torch.float32)
+        fidelity_mean = torch.as_tensor(normalizer_fidelity.mean, dtype=torch.float32)
+        fidelity_std = torch.as_tensor(normalizer_fidelity.std, dtype=torch.float32)
+
+        modelparams["means"] = {
+            "target": target_mean,
+            "fidelity": fidelity_mean,
+        }
+        modelparams["stddevs"] = {
+            "target": target_std,
+            "fidelity": fidelity_std,
+        }
+
+    # Get model (same architecture as main_normalizer.py)
     model = get_model(
         modelparams,
         model_type=model_type,
@@ -241,24 +257,60 @@ def main(args):
         best_loss = 1e10
 
     # Set loss function
+    # Multifidelity branch: keep original multi-task behavior (fidelity + d_uma)
     if details["multifidelity"]:
-        loss_coeff = {"fidelity": 1.0 - modelparams["loss_coeff"]["target"], "target": modelparams["loss_coeff"]["target"]}
-        correspondence_keys = {"fidelity": "fidelity", "target": "target"}
+        loss_coeff = {
+            "fidelity": 1.0 - modelparams["loss_coeff"]["d_uma"],
+            "d_uma": modelparams["loss_coeff"]["d_uma"],
+        }
+        correspondence_keys_loss = {"fidelity": "fidelity", "d_uma": "d_uma"}
+        loss_fn = get_loss_metric_fn(
+            loss_coeff=loss_coeff,
+            correspondence_keys=correspondence_keys_loss,
+            operation_name=details["loss_fn"],
+            normalizer=normalizer,
+        )
     else:
-        loss_coeff = {"target": 1.0}
-        correspondence_keys = {"target": "target"}
-    # Set loss function
-    # TODO: normalier issue
-    loss_fn = get_loss_metric_fn(
-        loss_coeff=loss_coeff,
-        correspondence_keys=correspondence_keys,
-        operation_name=details["loss_fn"],
-        normalizer=normalizer,
-    )
-    # Set metric function
+        # UMA-only baseline (non-multifidelity):
+        #   - 입력: 구조 + 모든 그래프 특성 (DFT-only와 동일)
+        #   - 학습 타겟: batch['d_uma']  (UMA 값)
+        #   - 평가지표: batch['target'] (DFT 값)에 대해 계산
+        def loss_fn(results, ground_truth):
+            """Train Painn on UMA labels while keeping inputs identical.
+
+            results['target'] : model prediction (2-dim per site)
+            ground_truth['d_uma'] : UMA energies (2-dim per site)
+            """
+
+            pred = results["target"]
+            targ = ground_truth["d_uma"]
+
+            # select only valid entries
+            valid_idx = torch.bitwise_not(torch.isnan(targ))
+            pred = pred[valid_idx]
+            targ = targ[valid_idx]
+
+            if pred.numel() == 0:
+                return torch.tensor(0.0, device=pred.device)
+
+            diff = (pred - targ) ** 2
+            return diff.mean()
+
+    # Set metric function (evaluate against true DFT target)
+    if details["multifidelity"]:
+        metric_coeff = {
+            "fidelity": 1.0 - modelparams["loss_coeff"]["d_uma"],
+            "d_uma": modelparams["loss_coeff"]["d_uma"],
+        }
+        correspondence_keys_metric = {"fidelity": "fidelity", "d_uma": "d_uma"}
+    else:
+        # For reporting, compare predictions to batch['target'] (DFT)
+        metric_coeff = {"target": 1.0}
+        correspondence_keys_metric = {"target": "target"}
+
     metric_fn = get_loss_metric_fn(
-        loss_coeff=loss_coeff,
-        correspondence_keys=correspondence_keys,
+        loss_coeff=metric_coeff,
+        correspondence_keys=correspondence_keys_metric,
         operation_name=details["metric_fn"],
         normalizer=normalizer,
     )
@@ -338,46 +390,49 @@ def main(args):
         best_metric=best_metric,
         early_stop=early_stop,
     )
-    # Test results
-   # test_loader = DataLoader(
-   #     test_set,
-   #     batch_size=args.batch_size,
-   #     num_workers=args.workers,
-   #     collate_fn=collate_dicts,
-   # )
-   # test_targets = []
-   # test_preds = []
+    # Test results (only if a test set exists)
+    if len(test_set) > 0:
+        test_loader = DataLoader(
+            test_set,
+            batch_size=args.batch_size,
+            num_workers=args.workers,
+            collate_fn=collate_dicts,
+        )
+        test_targets = []
+        test_preds = []
 
-    best_checkpoint = torch.load(f"{args.savedir}/best_model.pth.tar")
-    model.load_state_dict(best_checkpoint["state_dict"])
+        best_checkpoint = torch.load(f"{args.savedir}/best_model.pth.tar")
+        model.load_state_dict(best_checkpoint["state_dict"])
 
-    #(
-    #    test_preds,
-    #    test_targets,
-    #    test_ids,
-    #    metric_out,
-    #    test_preds_fidelity,
-    #    test_targets_fidelity,
-    #) = test_model(
-    #    model=model,
-    #    test_loader=test_loader,
-    #    metric_fn=metric_fn,
-    #    device="cpu",
-    #    normalizer=normalizer,
-    #    multifidelity=details["multifidelity"],
-    #)
-    #print(f"TEST Accuracy: {metric_out}")
-    # Save Test Results
-    #pkl.dump(test_ids, open(f"{args.savedir}/test_ids.pkl", "wb"))
-    #pkl.dump(test_preds, open(f"{args.savedir}/test_preds.pkl", "wb"))
-    #pkl.dump(test_targets, open(f"{args.savedir}/test_targs.pkl", "wb"))
-    #if details["multifidelity"]:
-    #    pkl.dump(
-    #        test_preds_fidelity, open(f"{args.savedir}/test_preds_fidelity.pkl", "wb")
-    #    )
-    #    pkl.dump(
-    #        test_targets_fidelity, open(f"{args.savedir}/test_targs_fidelity.pkl", "wb")
-    #    )
+        (
+            test_preds,
+            test_targets,
+            test_ids,
+            metric_out,
+            test_preds_fidelity,
+            test_targets_fidelity,
+        ) = test_model(
+            model=model,
+            test_loader=test_loader,
+            metric_fn=metric_fn,
+            device="cpu",
+            normalizer=normalizer,
+            multifidelity=details["multifidelity"],
+        )
+        print(f"TEST Accuracy: {metric_out}")
+        # Save Test Results
+        pkl.dump(test_ids, open(f"{args.savedir}/test_ids.pkl", "wb"))
+        pkl.dump(test_preds, open(f"{args.savedir}/test_preds.pkl", "wb"))
+        pkl.dump(test_targets, open(f"{args.savedir}/test_targs.pkl", "wb"))
+        if details["multifidelity"]:
+            pkl.dump(
+                test_preds_fidelity, open(f"{args.savedir}/test_preds_fidelity.pkl", "wb")
+            )
+            pkl.dump(
+                test_targets_fidelity, open(f"{args.savedir}/test_targs_fidelity.pkl", "wb")
+            )
+    else:
+        print("No test set defined (test_size=0). Skipping test evaluation.")
 
     # save wandb artifacts
     if args.wandb:

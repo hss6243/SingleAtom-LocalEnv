@@ -242,7 +242,7 @@ class Trainer:
                 end = time.time()
 
         print(
-            "*Validatoin: \t"
+            "*Validation: \t"
             "Time {batch_time.avg:.3f}\t"
             "Loss {loss.avg:.4f}\t"
             "Metric {metrics.avg:.3f}".format(

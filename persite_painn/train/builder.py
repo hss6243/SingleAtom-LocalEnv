@@ -143,6 +143,12 @@ def build_loss_metric_fn(
                 diff = operation(prediction=pred, target=targ)
                 err_sq = coef * torch.mean(diff)
                 loss += err_sq
+        # Ensure the returned value is always a torch.Tensor.
+        # If no valid targets exist for any key, `loss` remains a float (0.0),
+        # which breaks callers that expect a tensor and call `.cpu()` on it.
+        if isinstance(loss, float):
+            loss = torch.tensor(loss)
+
 
         return loss
 

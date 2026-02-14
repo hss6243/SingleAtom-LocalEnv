@@ -13,6 +13,8 @@ def build_dataset(
     multifidelity=False,
     seed=1234,
 ) -> Dataset:
+    """Summary: Builds a dataset from raw data. (Modified by SS to include d_uma)
+    """
     samples = [[id_, struct] for id_, struct in raw_data.items()]
     props = gen_props_from_file(
         samples=samples,
@@ -39,13 +41,19 @@ def compute_prop(id_, crystal, multifidelity):
             target = np.array(target).reshape(-1, 1)
         fidelity = None
         index = None
+
+    d_uma = crystal.site_properties["d_uma"]    
+    if d_uma is not None and len(d_uma) == 1:
+        d_uma = np.array(d_uma).reshape(-1, 1)
+  
+
     structure = AA.get_atoms(crystal)
     n = np.asarray(structure.numbers).reshape(-1, 1)
     xyz = np.asarray(structure.positions)
     nxyz = np.concatenate((n, xyz), axis=1)
     lattice = structure.cell[:]
 
-    return id_, nxyz, lattice, target, fidelity, index
+    return id_, nxyz, lattice, target, fidelity, index, d_uma
 
 
 def gen_props_from_file(
@@ -75,8 +83,9 @@ def gen_props_from_file(
     fidelity_list = []
     target_list = []
     index_list = []
+    d_uma_list = []
     for idx in tqdm(range(len(samples)), position=0, leave=True):
-        id_, nxyz, lattice, target, fidelity, index = compute_prop(
+        id_, nxyz, lattice, target, fidelity, index, d_uma = compute_prop(
             samples[idx][0],
             samples[idx][1],
             multifidelity,
@@ -88,13 +97,15 @@ def gen_props_from_file(
         target_list.append(target)
         fidelity_list.append(fidelity)
         index_list.append(index)
-
+        d_uma_list.append(d_uma)
+        
     props["nxyz"] = nxyz_list
     props["lattice"] = lattice_list
     props["name"] = name_list
     props["target"] = target_list
     props["fidelity"] = fidelity_list
     props["classification"] = index_list
+    props["d_uma"] = d_uma_list
 
     return props
 
