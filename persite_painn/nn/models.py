@@ -28,7 +28,25 @@ class Painn(nn.Module):
         fc_dropout = modelparams.get("fc_dropout", 0)
         self.means = modelparams.get("means")
         self.stddevs = modelparams.get("stddevs")
+        self.use_external_features = modelparams.get("use_external_features", False)
+        self.external_alpha = modelparams.get("external_alpha", 1.0)
+        self.external_feature_dim = modelparams.get("external_feature_dim")
+        # Backward compatibility: old Wu+b checkpoints do not store
+        # external_fusion_mode, and were trained with residual add fusion.
+        self.external_fusion_mode = modelparams.get("external_fusion_mode", "add")
         self.embed_block = EmbeddingBlock(feat_dim=feat_dim)
+        if self.use_external_features:
+            if self.external_feature_dim is None:
+                raise ValueError(
+                    "external_feature_dim must be provided when use_external_features=True"
+                )
+            if self.external_fusion_mode not in {"add", "concat"}:
+                raise ValueError(
+                    "external_fusion_mode must be one of {'add', 'concat'}"
+                )
+            self.external_adapter = nn.Linear(self.external_feature_dim, feat_dim)
+            if self.external_fusion_mode == "concat":
+                self.external_fusion_adapter = nn.Linear(2 * feat_dim, feat_dim)
         self.message_blocks = nn.ModuleList(
             [
                 MessageBlock(
@@ -159,6 +177,30 @@ class Painn(nn.Module):
 
             s_i = s_i + ds_update
             v_i = v_i + dv_update
+
+        if self.use_external_features and "new_features" in batch:
+            external_features = batch["new_features"].to(s_i.device).to(s_i.dtype)
+            if external_features.dim() == 1:
+                external_features = external_features.unsqueeze(-1)
+
+            if external_features.shape[0] != s_i.shape[0]:
+                raise ValueError(
+                    "Batch new_features atom dimension does not match PaiNN atom dimension: "
+                    f"{external_features.shape[0]} vs {s_i.shape[0]}"
+                )
+
+            external_proj = self.external_adapter(external_features)
+
+            if self.external_fusion_mode == "add":
+                s_i = s_i + self.external_alpha * external_proj
+            elif self.external_fusion_mode == "concat":
+                external_scaled = self.external_alpha * external_proj
+                fused = torch.cat((s_i, external_scaled), dim=-1)
+                s_i = self.external_fusion_adapter(fused)
+            else:
+                raise ValueError(
+                    f"Unsupported external_fusion_mode: {self.external_fusion_mode}"
+                )
 
         return s_i, xyz, r_ij, nbrs
 

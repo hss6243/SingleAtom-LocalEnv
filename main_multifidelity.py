@@ -10,7 +10,9 @@ from torch.utils.data import DataLoader, RandomSampler
 
 from persite_painn.data import collate_dicts
 from persite_painn.data.builder import (
+    attach_external_features_to_dataset,
     build_dataset,
+    load_external_features,
     split_train_validation_test,
 )
 from persite_painn.data.preprocess import convert_site_prop
@@ -193,11 +195,41 @@ parser.add_argument(
     type=str,
     help="pickle filename where val ids are stored",
 )
+parser.add_argument(
+    "--external_features",
+    default="",
+    type=str,
+    help="path to external per-node feature map (.pkl or .pt)",
+)
+parser.add_argument(
+    "--external_feature_dim",
+    default=None,
+    type=int,
+    help="external feature dimension (auto-infer from file when omitted)",
+)
+parser.add_argument(
+    "--external_alpha",
+    default=1.0,
+    type=float,
+    help="residual fusion scale for external features",
+)
+parser.add_argument(
+    "--external_fusion_mode",
+    default="concat",
+    choices=["add", "concat"],
+    type=str,
+    help="fusion mode for external features: add (legacy Wu+b residual) or concat",
+)
 
 
 def main(args):
     # Load details
     wandb_config, details, modelparams, model_type = load_params_from_path(args.details)
+
+    external_features = None
+    if args.external_features:
+        external_features = load_external_features(args.external_features)
+        print(f"Loaded external feature map: {len(external_features)} samples")
 
     # wandb config
     if args.wandb:
@@ -213,6 +245,8 @@ def main(args):
     if os.path.exists(args.data_cache):
         print("Cached dataset exists...")
         dataset = torch.load(args.data_cache)
+        if external_features is not None:
+            dataset = attach_external_features_to_dataset(dataset, external_features)
         print(f"Number of Data: {len(dataset)}")
     else:
         try:
@@ -232,6 +266,7 @@ def main(args):
                     cutoff=modelparams["cutoff"],
                     multifidelity=details["multifidelity"],
                     seed=args.seed,
+                    external_features=external_features,
                 )
             else:
                 new_data = convert_site_prop(data, details["output_keys"])
@@ -240,6 +275,7 @@ def main(args):
                     cutoff=modelparams["cutoff"],
                     multifidelity=details["multifidelity"],
                     seed=args.seed,
+                    external_features=external_features,
                 )
 
             print(f"Number of Data: {len(dataset)}")
@@ -298,6 +334,23 @@ def main(args):
         "target": normalizer_target.std,
         "fidelity": normalizer_duma.std,
     }
+
+    modelparams["use_external_features"] = external_features is not None
+    modelparams["external_alpha"] = args.external_alpha
+    modelparams["external_fusion_mode"] = args.external_fusion_mode
+    if external_features is not None:
+        if args.external_feature_dim is not None:
+            ext_dim = args.external_feature_dim
+        else:
+            first_key = next(iter(external_features.keys()))
+            first_val = external_features[first_key]
+            ext_dim = int(first_val.shape[-1]) if first_val.ndim > 1 else 1
+        modelparams["external_feature_dim"] = ext_dim
+        print(
+            f"External feature fusion enabled: dim={modelparams['external_feature_dim']}, "
+            f"alpha={modelparams['external_alpha']}, "
+            f"mode={modelparams['external_fusion_mode']}"
+        )
 
     # Get model (PainnMultifidelity when details["multifidelity"] is True)
     model = get_model(

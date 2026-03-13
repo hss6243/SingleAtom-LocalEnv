@@ -1,10 +1,100 @@
 from tqdm import tqdm
 import random
+import pickle as pkl
 from sklearn.model_selection import train_test_split
 
 from pymatgen.io.ase import AseAtomsAdaptor as AA
 import numpy as np
+import torch
 from .dataset import Dataset, Dataset_lite
+
+
+def _to_python_id(val):
+    if isinstance(val, torch.Tensor):
+        if val.numel() == 1:
+            return val.item()
+        return val.detach().cpu().numpy().tolist()
+    return val
+
+
+def _to_key(val):
+    return str(_to_python_id(val))
+
+
+def _extract_embedding_value(raw_val):
+    if isinstance(raw_val, dict):
+        if "embedding" in raw_val:
+            raw_val = raw_val["embedding"]
+        elif "embeddings" in raw_val:
+            raw_val = raw_val["embeddings"]
+
+    if hasattr(raw_val, "detach") and hasattr(raw_val, "cpu"):
+        return raw_val.detach().cpu().numpy()
+
+    return np.asarray(raw_val)
+
+
+def load_external_features(path):
+    """Load external per-node embeddings from a .pkl or .pt file.
+
+    Supported formats:
+    - dict: {sample_id: embedding_or_record}
+    - list: [{"sample_id": ..., "embedding": ...}, ...]
+    """
+    if path.endswith(".pt") or path.endswith(".pth"):
+        payload = torch.load(path, map_location="cpu")
+    else:
+        payload = pkl.load(open(path, "rb"))
+
+    feature_map = {}
+    if isinstance(payload, dict):
+        for sample_id, emb in payload.items():
+            feature_map[_to_key(sample_id)] = _extract_embedding_value(emb)
+        return feature_map
+
+    if isinstance(payload, list):
+        for row in payload:
+            if not isinstance(row, dict):
+                raise TypeError("Each list item must be a dict with sample_id and embedding")
+            sample_id = row.get("sample_id", row.get("id", row.get("name")))
+            if sample_id is None:
+                raise KeyError("Missing sample_id/id/name in external feature row")
+            emb = row.get("embedding", row.get("embeddings"))
+            if emb is None:
+                raise KeyError("Missing embedding/embeddings in external feature row")
+            feature_map[_to_key(sample_id)] = _extract_embedding_value(emb)
+        return feature_map
+
+    raise TypeError("Unsupported external feature payload type")
+
+
+def attach_external_features_to_dataset(dataset, external_features, strict=True):
+    """Attach per-node external features to an already constructed Dataset."""
+    new_features_list = []
+    for name, nxyz in zip(dataset.props["name"], dataset.props["nxyz"]):
+        key = _to_key(name)
+        if key not in external_features:
+            if strict:
+                raise KeyError(f"Missing external feature for sample id: {key}")
+            raise KeyError(
+                f"Non-strict mode is not supported yet for missing sample id: {key}"
+            )
+
+        feat = np.asarray(_extract_embedding_value(external_features[key]))
+        if feat.ndim == 1:
+            feat = feat.reshape(-1, 1)
+
+        num_atoms = int(nxyz.shape[0])
+        if feat.shape[0] != num_atoms:
+            raise ValueError(
+                f"External feature atom count mismatch for {key}: "
+                f"{feat.shape[0]} vs {num_atoms}"
+            )
+
+        new_features_list.append(torch.tensor(feat, dtype=torch.float32))
+
+    dataset.props["new_features"] = new_features_list
+    return dataset
 
 
 def build_dataset(
@@ -12,6 +102,7 @@ def build_dataset(
     cutoff=5.0,
     multifidelity=False,
     seed=1234,
+    external_features=None,
 ) -> Dataset:
     """Summary: Builds a dataset from raw data. (Modified by SS to include d_uma)
     """
@@ -20,6 +111,7 @@ def build_dataset(
         samples=samples,
         multifidelity=multifidelity,
         seed=seed,
+        external_features=external_features,
     )
     dataset = Dataset(props=props)
     # dataset = Dataset_lite(props=props)
@@ -60,6 +152,7 @@ def gen_props_from_file(
     samples,
     multifidelity=True,
     seed=1234,
+    external_features=None,
 ):
     """Summary
 
@@ -84,6 +177,7 @@ def gen_props_from_file(
     target_list = []
     index_list = []
     d_uma_list = []
+    new_features_list = []
     for idx in tqdm(range(len(samples)), position=0, leave=True):
         id_, nxyz, lattice, target, fidelity, index, d_uma = compute_prop(
             samples[idx][0],
@@ -98,6 +192,21 @@ def gen_props_from_file(
         fidelity_list.append(fidelity)
         index_list.append(index)
         d_uma_list.append(d_uma)
+        if external_features is not None:
+            key = _to_key(id_)
+            if key not in external_features:
+                raise KeyError(f"Missing external feature for sample id: {key}")
+
+            feat = np.asarray(_extract_embedding_value(external_features[key]))
+            if feat.ndim == 1:
+                feat = feat.reshape(-1, 1)
+
+            if feat.shape[0] != nxyz.shape[0]:
+                raise ValueError(
+                    f"External feature atom count mismatch for {key}: "
+                    f"{feat.shape[0]} vs {nxyz.shape[0]}"
+                )
+            new_features_list.append(feat)
         
     props["nxyz"] = nxyz_list
     props["lattice"] = lattice_list
@@ -106,6 +215,8 @@ def gen_props_from_file(
     props["fidelity"] = fidelity_list
     props["classification"] = index_list
     props["d_uma"] = d_uma_list
+    if external_features is not None:
+        props["new_features"] = new_features_list
 
     return props
 
