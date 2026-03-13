@@ -108,9 +108,14 @@ parser.add_argument(
 parser.add_argument(
     "--external_fusion_mode",
     default="concat",
-    choices=["add", "concat"],
+    choices=["none", "add", "concat", "concat_unprojected"],
     type=str,
-    help="fusion mode for external features: add (legacy Wu+b residual) or concat",
+    help=(
+        "fusion mode for external features: "
+        "none (ignore external), add (Wu+b residual), "
+        "concat (concat + 2d->d projection), "
+        "concat_unprojected (keep concatenated 2d feature)"
+    ),
 )
 
 

@@ -34,19 +34,28 @@ class Painn(nn.Module):
         # Backward compatibility: old Wu+b checkpoints do not store
         # external_fusion_mode, and were trained with residual add fusion.
         self.external_fusion_mode = modelparams.get("external_fusion_mode", "add")
+        self.atom_feat_dim = feat_dim
         self.embed_block = EmbeddingBlock(feat_dim=feat_dim)
         if self.use_external_features:
             if self.external_feature_dim is None:
                 raise ValueError(
                     "external_feature_dim must be provided when use_external_features=True"
                 )
-            if self.external_fusion_mode not in {"add", "concat"}:
+            if self.external_fusion_mode not in {
+                "none",
+                "add",
+                "concat",
+                "concat_unprojected",
+            }:
                 raise ValueError(
-                    "external_fusion_mode must be one of {'add', 'concat'}"
+                    "external_fusion_mode must be one of {'none', 'add', 'concat', 'concat_unprojected'}"
                 )
-            self.external_adapter = nn.Linear(self.external_feature_dim, feat_dim)
+            if self.external_fusion_mode != "none":
+                self.external_adapter = nn.Linear(self.external_feature_dim, feat_dim)
             if self.external_fusion_mode == "concat":
                 self.external_fusion_adapter = nn.Linear(2 * feat_dim, feat_dim)
+            if self.external_fusion_mode == "concat_unprojected":
+                self.atom_feat_dim = 2 * feat_dim
         self.message_blocks = nn.ModuleList(
             [
                 MessageBlock(
@@ -78,7 +87,7 @@ class Painn(nn.Module):
 
         if self.multifidelity:
             self.readout_block = ReadoutBlock(
-                feat_dim=feat_dim,
+                feat_dim=self.atom_feat_dim,
                 output_atom_fea=output_atom_fea_dim["atom_emb"],
                 output_keys=["atom_emb"],
                 activation=activation,
@@ -119,7 +128,7 @@ class Painn(nn.Module):
             )
         else:
             self.readout_block = ReadoutBlock(
-                feat_dim=feat_dim,
+                feat_dim=self.atom_feat_dim,
                 output_atom_fea=output_atom_fea_dim["target"],
                 output_keys=["target"],
                 activation=activation,
@@ -191,12 +200,17 @@ class Painn(nn.Module):
 
             external_proj = self.external_adapter(external_features)
 
-            if self.external_fusion_mode == "add":
+            if self.external_fusion_mode == "none":
+                pass
+            elif self.external_fusion_mode == "add":
                 s_i = s_i + self.external_alpha * external_proj
             elif self.external_fusion_mode == "concat":
                 external_scaled = self.external_alpha * external_proj
                 fused = torch.cat((s_i, external_scaled), dim=-1)
                 s_i = self.external_fusion_adapter(fused)
+            elif self.external_fusion_mode == "concat_unprojected":
+                external_scaled = self.external_alpha * external_proj
+                s_i = torch.cat((s_i, external_scaled), dim=-1)
             else:
                 raise ValueError(
                     f"Unsupported external_fusion_mode: {self.external_fusion_mode}"

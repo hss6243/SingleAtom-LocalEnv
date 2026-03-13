@@ -105,6 +105,18 @@ parser.add_argument(
     type=float,
     help="residual fusion scale for external features",
 )
+parser.add_argument(
+    "--external_fusion_mode",
+    default="concat",
+    choices=["none", "add", "concat", "concat_unprojected"],
+    type=str,
+    help=(
+        "fusion mode for external features: "
+        "none (ignore external), add (Wu+b residual), "
+        "concat (concat + 2d->d projection), "
+        "concat_unprojected (keep concatenated 2d feature)"
+    ),
+)
 
 
 def main(args):
@@ -224,6 +236,7 @@ def main(args):
 
     modelparams["use_external_features"] = external_features is not None
     modelparams["external_alpha"] = args.external_alpha
+    modelparams["external_fusion_mode"] = args.external_fusion_mode
     if external_features is not None:
         if args.external_feature_dim is not None:
             ext_dim = args.external_feature_dim
@@ -234,7 +247,8 @@ def main(args):
         modelparams["external_feature_dim"] = ext_dim
         print(
             f"External feature fusion enabled: dim={modelparams['external_feature_dim']}, "
-            f"alpha={modelparams['external_alpha']}"
+            f"alpha={modelparams['external_alpha']}, "
+            f"mode={modelparams['external_fusion_mode']}"
         )
 
     # Get model
