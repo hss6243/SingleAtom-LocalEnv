@@ -264,15 +264,6 @@ parser.add_argument(
     type=float,
     help="power exponent for per-sample finite-label count weighting in MF mode",
 )
-parser.add_argument(
-    "--temporary_val_target_only",
-    action="store_true",
-    default=False,
-    help=(
-        "deprecated flag (kept for CLI compatibility); validation now always "
-        "uses the same loss function as training"
-    ),
-)
 
 
 def main(args):
@@ -494,11 +485,6 @@ def main(args):
 
     # Validation always follows the same loss as training.
     validation_loss_fn = None
-    if args.temporary_val_target_only:
-        print(
-            "[INFO] --temporary_val_target_only is deprecated and ignored; "
-            "validation uses training loss."
-        )
 
     # Scheduler
     scheduler = get_scheduler(
