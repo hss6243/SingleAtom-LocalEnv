@@ -269,8 +269,8 @@ parser.add_argument(
     action="store_true",
     default=False,
     help=(
-        "TEMPORARY EXPERIMENT ONLY: use DFT target-only validation loss for "
-        "model selection/early stopping. Remove this option after this experiment."
+        "deprecated flag (kept for CLI compatibility); validation now always "
+        "uses the same loss function as training"
     ),
 )
 
@@ -492,25 +492,13 @@ def main(args):
         normalizer=normalizer,
     )
 
-    # Validation loss selection
-    # TEMPORARY EXPERIMENT ONLY: this branch exists for short-term comparison and
-    # should be removed after finishing this experiment.
+    # Validation always follows the same loss as training.
+    validation_loss_fn = None
     if args.temporary_val_target_only:
-        val_loss_coeff = {"target": 1.0}
-        val_correspondence = {"target": "target"}
-        validation_loss_fn = get_loss_metric_fn(
-            loss_coeff=val_loss_coeff,
-            correspondence_keys=val_correspondence,
-            operation_name=details["loss_fn"],
-            normalizer=normalizer,
-        )
         print(
-            "[TEMP] Validation loss is set to DFT target-only. "
-            "Remove --temporary_val_target_only after this experiment."
+            "[INFO] --temporary_val_target_only is deprecated and ignored; "
+            "validation uses training loss."
         )
-    else:
-        # Default behavior: validation loss follows the same loss function as train.
-        validation_loss_fn = None
 
     # Scheduler
     scheduler = get_scheduler(
