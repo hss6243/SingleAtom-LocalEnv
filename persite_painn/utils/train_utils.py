@@ -123,11 +123,20 @@ class Normalizer:
             valid_index = torch.bitwise_not(torch.isnan(tensor))
             filtered_targs = tensor[valid_index]
             print(f"Number of {key} for normlization: {filtered_targs.shape[0]}")
-            mean = torch.mean(filtered_targs)
-            std = torch.std(filtered_targs)
-            _max = torch.max(filtered_targs)
-            _min = torch.min(filtered_targs)
-            _sum = torch.sum(filtered_targs)
+            if filtered_targs.numel() == 0:
+                mean = torch.tensor(0.0, dtype=tensor.dtype)
+                std = torch.tensor(1.0, dtype=tensor.dtype)
+                _max = torch.tensor(0.0, dtype=tensor.dtype)
+                _min = torch.tensor(0.0, dtype=tensor.dtype)
+                _sum = torch.tensor(0.0, dtype=tensor.dtype)
+            else:
+                mean = torch.mean(filtered_targs)
+                std = torch.std(filtered_targs, unbiased=False)
+                if torch.isnan(std) or std.item() == 0.0:
+                    std = torch.tensor(1.0, dtype=tensor.dtype)
+                _max = torch.max(filtered_targs)
+                _min = torch.min(filtered_targs)
+                _sum = torch.sum(filtered_targs)
         elif tensor.dim() == 2:
             mean_bin = []
             std_bin = []
@@ -139,16 +148,25 @@ class Normalizer:
                 valid_index = torch.bitwise_not(torch.isnan(values))
                 filtered_targs = values[valid_index]
                 print(f"Number of {key}_{i} for normlization: {filtered_targs.shape[0]}")
-                mean_temp = torch.mean(filtered_targs)
-                mean_bin.append(mean_temp)
-                std_temp = torch.std(filtered_targs)
-                std_bin.append(std_temp)
-                max_temp = torch.max(filtered_targs)
-                _max_bin.append(max_temp)
-                min_temp = torch.min(filtered_targs)
-                _min_bin.append(min_temp)
-                sum_temp = torch.sum(filtered_targs)
-                _sum_bin.append(sum_temp)
+                if filtered_targs.numel() == 0:
+                    mean_bin.append(torch.tensor(0.0, dtype=tensor.dtype))
+                    std_bin.append(torch.tensor(1.0, dtype=tensor.dtype))
+                    _max_bin.append(torch.tensor(0.0, dtype=tensor.dtype))
+                    _min_bin.append(torch.tensor(0.0, dtype=tensor.dtype))
+                    _sum_bin.append(torch.tensor(0.0, dtype=tensor.dtype))
+                else:
+                    mean_temp = torch.mean(filtered_targs)
+                    mean_bin.append(mean_temp)
+                    std_temp = torch.std(filtered_targs, unbiased=False)
+                    if torch.isnan(std_temp) or std_temp.item() == 0.0:
+                        std_temp = torch.tensor(1.0, dtype=tensor.dtype)
+                    std_bin.append(std_temp)
+                    max_temp = torch.max(filtered_targs)
+                    _max_bin.append(max_temp)
+                    min_temp = torch.min(filtered_targs)
+                    _min_bin.append(min_temp)
+                    sum_temp = torch.sum(filtered_targs)
+                    _sum_bin.append(sum_temp)
 
             mean = torch.tensor(mean_bin)
             std = torch.tensor(std_bin)

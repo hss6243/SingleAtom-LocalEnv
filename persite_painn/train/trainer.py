@@ -44,6 +44,7 @@ class Trainer:
         train_loader,
         validation_loader,
         run_wandb,
+        validation_loss_fn=None,
         normalizer=None,
     ):
         self.model_path = model_path
@@ -56,6 +57,7 @@ class Trainer:
         self.validation_loader = validation_loader
         self.normalizer = normalizer
         self.run_wandb = run_wandb
+        self.validation_loss_fn = validation_loss_fn
 
     def train(
         self,
@@ -224,7 +226,10 @@ class Trainer:
 
                 output = self.model(val_batch)
 
-                loss = self.loss_fn(output, val_batch)
+                if self.validation_loss_fn is None:
+                    loss = self.loss_fn(output, val_batch)
+                else:
+                    loss = self.validation_loss_fn(output, val_batch)
                 metric = self.metric_fn(output, val_batch)
 
                 losses.update(loss.data.cpu().item(), target.size(0))

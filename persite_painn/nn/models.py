@@ -50,12 +50,12 @@ class Painn(nn.Module):
                 raise ValueError(
                     "external_fusion_mode must be one of {'none', 'add', 'concat', 'concat_unprojected'}"
                 )
-            if self.external_fusion_mode != "none":
+            if self.external_fusion_mode in {"add", "concat"}:
                 self.external_adapter = nn.Linear(self.external_feature_dim, feat_dim)
             if self.external_fusion_mode == "concat":
                 self.external_fusion_adapter = nn.Linear(2 * feat_dim, feat_dim)
             if self.external_fusion_mode == "concat_unprojected":
-                self.atom_feat_dim = 2 * feat_dim
+                self.atom_feat_dim = feat_dim + self.external_feature_dim
         self.message_blocks = nn.ModuleList(
             [
                 MessageBlock(
@@ -198,18 +198,18 @@ class Painn(nn.Module):
                     f"{external_features.shape[0]} vs {s_i.shape[0]}"
                 )
 
-            external_proj = self.external_adapter(external_features)
-
             if self.external_fusion_mode == "none":
                 pass
             elif self.external_fusion_mode == "add":
+                external_proj = self.external_adapter(external_features)
                 s_i = s_i + self.external_alpha * external_proj
             elif self.external_fusion_mode == "concat":
+                external_proj = self.external_adapter(external_features)
                 external_scaled = self.external_alpha * external_proj
                 fused = torch.cat((s_i, external_scaled), dim=-1)
                 s_i = self.external_fusion_adapter(fused)
             elif self.external_fusion_mode == "concat_unprojected":
-                external_scaled = self.external_alpha * external_proj
+                external_scaled = self.external_alpha * external_features
                 s_i = torch.cat((s_i, external_scaled), dim=-1)
             else:
                 raise ValueError(

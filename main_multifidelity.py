@@ -16,7 +16,10 @@ from persite_painn.data.builder import (
     split_train_validation_test,
 )
 from persite_painn.data.preprocess import convert_site_prop
-from persite_painn.data.sampler import ImbalancedDatasetSampler
+from persite_painn.data.sampler import (
+    ImbalancedDFTdLabelBatchSampler,
+    MinDFTBatchSampler,
+)
 from persite_painn.nn.builder import get_model, load_params_from_path
 from persite_painn.train import AverageMeter
 from persite_painn.train.builder import (
@@ -223,6 +226,51 @@ parser.add_argument(
         "none (ignore external), add (Wu+b residual), "
         "concat (concat + 2d->d projection), "
         "concat_unprojected (keep concatenated 2d feature)"
+    ),
+)
+parser.add_argument(
+    "--train_min_dft_per_batch",
+    default=0,
+    type=int,
+    help=(
+        "minimum number of DFT-labeled samples per training batch; "
+        "0 disables enforced DFT batch composition"
+    ),
+)
+parser.add_argument(
+    "--train_dft_replacement",
+    action="store_true",
+    default=False,
+    help="allow replacement when enforcing minimum DFT samples per batch",
+)
+parser.add_argument(
+    "--disable_imbalanced_dftd_sampler",
+    action="store_true",
+    default=False,
+    help=(
+        "disable ImbalancedDFTdLabelBatchSampler in multifidelity training and "
+        "fall back to previous sampler logic"
+    ),
+)
+parser.add_argument(
+    "--dft_group_weight",
+    default=0.5,
+    type=float,
+    help="sampling probability mass allocated to DFT-labeled samples in MF mode",
+)
+parser.add_argument(
+    "--label_count_power",
+    default=1.0,
+    type=float,
+    help="power exponent for per-sample finite-label count weighting in MF mode",
+)
+parser.add_argument(
+    "--temporary_val_target_only",
+    action="store_true",
+    default=False,
+    help=(
+        "TEMPORARY EXPERIMENT ONLY: use DFT target-only validation loss for "
+        "model selection/early stopping. Remove this option after this experiment."
     ),
 )
 
@@ -444,21 +492,85 @@ def main(args):
         normalizer=normalizer,
     )
 
+    # Validation loss selection
+    # TEMPORARY EXPERIMENT ONLY: this branch exists for short-term comparison and
+    # should be removed after finishing this experiment.
+    if args.temporary_val_target_only:
+        val_loss_coeff = {"target": 1.0}
+        val_correspondence = {"target": "target"}
+        validation_loss_fn = get_loss_metric_fn(
+            loss_coeff=val_loss_coeff,
+            correspondence_keys=val_correspondence,
+            operation_name=details["loss_fn"],
+            normalizer=normalizer,
+        )
+        print(
+            "[TEMP] Validation loss is set to DFT target-only. "
+            "Remove --temporary_val_target_only after this experiment."
+        )
+    else:
+        # Default behavior: validation loss follows the same loss function as train.
+        validation_loss_fn = None
+
     # Scheduler
     scheduler = get_scheduler(
         sched=details["sched"], optimizer=optimizer, epochs=args.epochs
     )
 
     # DataLoaders
-    # For the unified multifidelity dataset, "classification" may contain NaNs,
-    # so we use a simple RandomSampler for all cases.
-    train_loader = DataLoader(
-        train_set,
-        batch_size=args.batch_size,
-        num_workers=args.workers,
-        collate_fn=collate_dicts,
-        sampler=RandomSampler(train_set),
-    )
+    if details["multifidelity"] and not args.disable_imbalanced_dftd_sampler:
+        train_batch_sampler = ImbalancedDFTdLabelBatchSampler(
+            targets=train_set.props["target"],
+            batch_size=args.batch_size,
+            drop_last=False,
+            dft_group_weight=args.dft_group_weight,
+            label_count_power=args.label_count_power,
+            replacement=True,
+            min_dft_per_batch=args.train_min_dft_per_batch,
+            dft_replacement=args.train_dft_replacement,
+            shuffle_within_batch=True,
+        )
+        train_loader = DataLoader(
+            train_set,
+            num_workers=args.workers,
+            collate_fn=collate_dicts,
+            batch_sampler=train_batch_sampler,
+        )
+        print(
+            "Using ImbalancedDFTdLabelBatchSampler for MF: "
+            f"dft_group_weight={args.dft_group_weight}, "
+            f"label_count_power={args.label_count_power}, "
+            f"min_dft_per_batch={args.train_min_dft_per_batch}, "
+            f"dft_replacement={args.train_dft_replacement}"
+        )
+    elif details["multifidelity"] and args.train_min_dft_per_batch > 0:
+        train_batch_sampler = MinDFTBatchSampler(
+            targets=train_set.props["target"],
+            batch_size=args.batch_size,
+            min_dft_per_batch=args.train_min_dft_per_batch,
+            drop_last=False,
+            shuffle=True,
+            dft_replacement=args.train_dft_replacement,
+        )
+        train_loader = DataLoader(
+            train_set,
+            num_workers=args.workers,
+            collate_fn=collate_dicts,
+            batch_sampler=train_batch_sampler,
+        )
+        print(
+            "Using MinDFTBatchSampler fallback for MF: "
+            f"min_dft_per_batch={args.train_min_dft_per_batch}, "
+            f"dft_replacement={args.train_dft_replacement}"
+        )
+    else:
+        train_loader = DataLoader(
+            train_set,
+            batch_size=args.batch_size,
+            num_workers=args.workers,
+            collate_fn=collate_dicts,
+            sampler=RandomSampler(train_set),
+        )
 
     val_loader = DataLoader(
         val_set,
@@ -505,6 +617,7 @@ def main(args):
         train_loader=train_loader,
         validation_loader=val_loader,
         run_wandb=args.wandb,
+        validation_loss_fn=validation_loss_fn,
         normalizer=normalizer,
     )
 

@@ -270,7 +270,10 @@ def split_train_test(dataset, test_size=0.2, binary=False, targ_name=None, seed=
         TYPE: Description
     """
 
-    if binary:
+    if test_size is not None and test_size <= 0 and test_ids is None:
+        idx_train = list(range(len(dataset)))
+        idx_test = []
+    elif binary:
         idx_train, idx_test = binary_split(
             dataset=dataset, targ_name=targ_name, test_size=test_size, seed=seed
         )
@@ -311,9 +314,16 @@ def split_train_validation_test(
         TYPE: Description
     """
     train, test = split_train_test(dataset, test_size=test_size, seed=seed, test_ids=test_ids)
-    train, validation = split_train_test(
-        train, test_size=val_size / (1 - test_size), seed=seed, test_ids=val_ids
-    )
+
+    if val_size is None or val_size <= 0:
+        validation = Dataset(props={key: [] for key in train.props.keys()})
+    else:
+        denom = 1 - test_size
+        if denom <= 0:
+            raise ValueError("test_size must be < 1.0")
+        train, validation = split_train_test(
+            train, test_size=val_size / denom, seed=seed, test_ids=val_ids
+        )
 
     return train, validation, test
 
